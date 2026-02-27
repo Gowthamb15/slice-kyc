@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>slice KYC Portal</title>
+
+<style>
+body{
+margin:0;
+font-family:Segoe UI;
+background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+color:white;
+}
+.header{
+display:flex;
+justify-content:space-between;
+padding:20px 40px;
+background:rgba(0,0,0,0.4);
+}
+.brand{
+font-size:38px;
+font-weight:bold;
+color:#ff2d9a;
+}
+.container{padding:40px;}
+.card{
+background:rgba(255,255,255,0.07);
+padding:20px;
+border-radius:12px;
+margin-bottom:20px;
+}
+input,select,textarea{
+width:100%;
+padding:12px;
+margin-bottom:12px;
+border-radius:8px;
+border:none;
+}
+button{
+background:#ff2d9a;
+color:white;
+border:none;
+padding:10px 18px;
+border-radius:8px;
+cursor:pointer;
+font-weight:bold;
+}
+table{
+width:100%;
+border-collapse:collapse;
+}
+th,td{
+padding:10px;
+border-bottom:1px solid rgba(255,255,255,0.2);
+text-align:center;
+}
+.progress{
+width:100%;
+background:#333;
+border-radius:8px;
+display:none;
+margin-bottom:10px;
+}
+.progress-bar{
+height:10px;
+background:#ff2d9a;
+width:0%;
+border-radius:8px;
+}
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+</head>
+
+<body>
+
+<div id="loginPage" class="container">
+<div class="card">
+<h2 style="text-align:center;color:#ff2d9a;font-size:40px;font-weight:bold;">slice</h2>
+
+<select id="role">
+<option value="agent">Agent</option>
+<option value="admin">Admin</option>
+</select>
+
+<input type="email" id="email" placeholder="Email">
+<input type="password" id="password" placeholder="Password">
+
+<button onclick="register()">Register</button>
+<button onclick="login()">Login</button>
+</div>
+</div>
+
+<div id="dashboard" style="display:none;">
+<div class="header">
+<div class="brand">slice</div>
+<div>
+<span id="welcome"></span>
+<button onclick="logout()">Logout</button>
+</div>
+</div>
+
+<div class="container">
+<div id="portfolio"></div>
+<div id="formSection"></div>
+</div>
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBGmbVp8Y0w3qR9twU6QRRFCHyeSiviLT0",
+  authDomain: "slice-kyc.firebaseapp.com",
+  projectId: "slice-kyc",
+  storageBucket: "slice-kyc.firebasestorage.app",
+  messagingSenderId: "848040880122",
+  appId: "1:848040880122:web:b4122a02e34ddfc68be643"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+let currentRole="";
+
+window.register = async function(){
+const email=document.getElementById("email").value;
+const password=document.getElementById("password").value;
+await createUserWithEmailAndPassword(auth,email,password);
+alert("Registered Successfully");
+}
+
+window.login = async function(){
+const email=document.getElementById("email").value;
+const password=document.getElementById("password").value;
+currentRole=document.getElementById("role").value;
+
+await signInWithEmailAndPassword(auth,email,password);
+
+document.getElementById("loginPage").style.display="none";
+document.getElementById("dashboard").style.display="block";
+document.getElementById("welcome").innerText="Welcome "+email;
+
+loadPortfolio(email);
+}
+
+window.logout = async function(){
+await signOut(auth);
+location.reload();
+}
+
+async function loadPortfolio(email){
+
+let portfolio=document.getElementById("portfolio");
+let form=document.getElementById("formSection");
+portfolio.innerHTML="";
+form.innerHTML="";
+
+let q;
+if(currentRole==="admin"){
+q=await getDocs(collection(db,"kyc"));
+}else{
+q=await getDocs(query(collection(db,"kyc"),where("agent","==",email)));
+}
+
+let html='<div class="card"><h3>Portfolio</h3><table><tr><th>Agent</th><th>Name</th><th>Phone</th><th>Date</th></tr>';
+
+q.forEach(doc=>{
+let d=doc.data();
+html+=`<tr>
+<td>${d.agent}</td>
+<td>${d.name}</td>
+<td>${d.phone}</td>
+<td>${d.date}</td>
+</tr>`;
+});
+
+html+='</table></div>';
+
+if(currentRole==="admin"){
+html+=`<div class="card"><button onclick="downloadExcel()">Download Excel</button></div>`;
+}
+
+portfolio.innerHTML=html;
+
+if(currentRole==="agent"){
+form.innerHTML=`
+<div class="card">
+<h3>New KYC</h3>
+<input type="text" id="name" placeholder="Customer Name">
+<input type="text" id="phone" placeholder="Phone">
+<textarea id="address" placeholder="Address"></textarea>
+<input type="file" id="files" multiple>
+<div class="progress" id="progressBox"><div class="progress-bar" id="bar"></div></div>
+<button onclick="submitKYC()">Submit</button>
+</div>`;
+}
+}
+
+window.submitKYC = async function(){
+
+let files=document.getElementById("files").files;
+if(files.length>20){alert("Maximum 20 files allowed");return;}
+
+let progressBox=document.getElementById("progressBox");
+let bar=document.getElementById("bar");
+progressBox.style.display="block";
+
+let email=auth.currentUser.email;
+
+for(let file of files){
+let storageRef=ref(storage,"kyc/"+email+"/"+file.name);
+let uploadTask=uploadBytesResumable(storageRef,file);
+
+uploadTask.on("state_changed",snapshot=>{
+let progress=(snapshot.bytesTransferred/snapshot.totalBytes)*100;
+bar.style.width=progress+"%";
+});
+}
+
+await addDoc(collection(db,"kyc"),{
+agent:email,
+name:document.getElementById("name").value,
+phone:document.getElementById("phone").value,
+address:document.getElementById("address").value,
+date:new Date().toLocaleDateString()
+});
+
+alert("KYC Submitted Successfully");
+loadPortfolio(email);
+}
+
+window.downloadExcel = async function(){
+let q=await getDocs(collection(db,"kyc"));
+let data=[];
+q.forEach(doc=>data.push(doc.data()));
+let ws=XLSX.utils.json_to_sheet(data);
+let wb=XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb,ws,"KYC");
+XLSX.writeFile(wb,"slice_KYC_Data.xlsx");
+}
+
+</script>
+
+</body>
+</html>
